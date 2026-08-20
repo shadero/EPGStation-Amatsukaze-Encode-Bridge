@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-latest
+          - platform: windows-x86_64
+            runner: windows-latest
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package Linux build
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          package="epgstation-amatsukaze-bridge-${GITHUB_REF_NAME}-linux-x86_64"
+          mkdir -p "dist/${package}/epgstation"
+          cp target/release/epgstation-amatsukaze-bridge "dist/${package}/"
+          cp config.example.toml README.md LICENSE "dist/${package}/"
+          cp epgstation/amatsukaze-bridge-client.js "dist/${package}/epgstation/"
+          tar -czf "dist/${package}.tar.gz" -C dist "${package}"
+
+      - name: Package Windows build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $package = "epgstation-amatsukaze-bridge-$env:GITHUB_REF_NAME-windows-x86_64"
+          $packagePath = Join-Path "dist" $package
+          New-Item -ItemType Directory -Path (Join-Path $packagePath "epgstation") -Force | Out-Null
+          Copy-Item "target/release/epgstation-amatsukaze-bridge.exe" $packagePath
+          Copy-Item "config.example.toml", "README.md", "LICENSE" $packagePath
+          Copy-Item "epgstation/amatsukaze-bridge-client.js" (Join-Path $packagePath "epgstation")
+          Compress-Archive -Path $packagePath -DestinationPath "dist/$package.zip"
+
+      - name: Upload build
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.platform }}
+          path: dist/*.*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download builds
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          release-assets/*
+          --verify-tag
+          --generate-notes
+          --title "$GITHUB_REF_NAME"
