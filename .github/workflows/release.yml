@@ -34,29 +34,31 @@ jobs:
         shell: bash
         run: |
           package="epgstation-amatsukaze-bridge-${GITHUB_REF_NAME}-linux-x86_64"
-          mkdir -p "dist/${package}/epgstation"
-          cp target/release/epgstation-amatsukaze-bridge "dist/${package}/"
-          cp config.example.toml README.md LICENSE "dist/${package}/"
-          cp epgstation/amatsukaze-bridge-client.js "dist/${package}/epgstation/"
-          tar -czf "dist/${package}.tar.gz" -C dist "${package}"
+          package_path="dist/staging/${package}"
+          mkdir -p "${package_path}/epgstation" dist/release
+          cp target/release/epgstation-amatsukaze-bridge "${package_path}/"
+          cp config.example.toml README.md LICENSE "${package_path}/"
+          cp epgstation/amatsukaze-bridge-client.js "${package_path}/epgstation/"
+          tar -czf "dist/release/${package}.tar.gz" -C dist/staging "${package}"
 
       - name: Package Windows build
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $package = "epgstation-amatsukaze-bridge-$env:GITHUB_REF_NAME-windows-x86_64"
-          $packagePath = Join-Path "dist" $package
+          $packagePath = Join-Path "dist/staging" $package
+          New-Item -ItemType Directory -Path "dist/release" -Force | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $packagePath "epgstation") -Force | Out-Null
           Copy-Item "target/release/epgstation-amatsukaze-bridge.exe" $packagePath
           Copy-Item "config.example.toml", "README.md", "LICENSE" $packagePath
           Copy-Item "epgstation/amatsukaze-bridge-client.js" (Join-Path $packagePath "epgstation")
-          Compress-Archive -Path $packagePath -DestinationPath "dist/$package.zip"
+          Compress-Archive -Path $packagePath -DestinationPath "dist/release/$package.zip"
 
       - name: Upload build
         uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.platform }}
-          path: dist/*.*
+          path: dist/release/*
           if-no-files-found: error
 
   release:
@@ -72,13 +74,16 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Create GitHub Release
+      - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          release-assets/*
-          --verify-tag
-          --generate-notes
-          --title "$GITHUB_REF_NAME"
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release-assets/* \
+              --verify-tag \
+              --generate-notes \
+              --title "$GITHUB_REF_NAME"
+          fi
