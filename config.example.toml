@@ -1,0 +1,25 @@
+# Bridgeが待ち受けるアドレス
+listen = "0.0.0.0:8765"
+
+# EPGStationのURL
+epgstation_url = "http://epgstation:8888/"
+
+# AmatsukazeサーバのAPI
+amatsukaze_url = "http://127.0.0.1:32769/"
+
+# ジョブごとの作業ディレクトリ
+work_dir = "work"
+
+# EPGStationへアップロードするときの保存先
+parent_directory_name = "recorded"
+
+# ダウンロード・アップロードの同時実行数
+download_concurrency = 1
+upload_concurrency = 1
+
+poll_interval_seconds = 10
+encode_timeout_seconds = 10800
+request_timeout_seconds = 30
+
+# 失敗時に元動画を残すか（デバッグ用途）
+keep_failed_files = true
