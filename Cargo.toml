@@ -2,7 +2,7 @@
 name = "epgstation-amatsukaze-bridge"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [dependencies]
 anyhow = "1.0"
@@ -17,3 +17,8 @@ toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.0", features = ["serde", "v4"] }
+
+[target.'cfg(windows)'.dependencies]
+iced = { version = "=0.14.0", default-features = false, features = ["tiny-skia", "tokio"] }
+tray-icon = "=0.24.2"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }

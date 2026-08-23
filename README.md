@@ -2,18 +2,20 @@
 
 ## 概要
 
-EPGStationの録画をAmatsukazeサーバへ取得し、エンコード後の動画をEPGStationへ戻すBridgeです。
+EPGStationに録画された番組を、別PCで動作しているAmatsukazeでエンコードさせるためのBridgeです。
 
-1. EPGStationから元動画をダウンロード
+以下のような流れで動作します。
+
+1. EPGStationから対象の動画をダウンロード
 2. Amatsukazeの指定プロファイルでエンコード
-3. 完成動画を元の録画へアップロード
+3. 完成動画をEPGStationにアップロード
 
 BridgeはAmatsukazeサーバ上で動かす想定です。
-また、Amatsukazeはrigaya氏のforkで動作させる前提で作成しています。
+また、Amatsukazeはrigaya氏のfork版で動作させる前提で作成しています。
 
 ## 使用方法
 
-1. Releaseから本体をAmatukazeサーバが動作しているPCにダウンロード（以下、Bridge）
+1. Releaseから本体をAmatsukazeサーバへダウンロード（以下、Bridge）
 2. Bridgeのconfig.tomlを設定
 3. Bridgeを起動（スタートアップ登録をしておくと便利です！）
 4. `epgstation/amatsukaze-bridge-client.js`をEPGStationから参照できる場所へコピー
