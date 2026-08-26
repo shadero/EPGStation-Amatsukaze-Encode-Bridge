@@ -23,7 +23,10 @@ impl AmatsukazeClient {
         input_dir: &Path,
         output_dir: &Path,
     ) -> Result<SubmittedEncode> {
-        let initial_queue = self.queue().await?;
+        let initial_queue = self
+            .queue()
+            .await
+            .context("could not read Amatsukaze queue before submission")?;
         let previous_ids: HashSet<i64> = initial_queue.items.iter().map(|item| item.id).collect();
         let payload = QueueAddRequest {
             dir_path: as_utf8(input_dir)?,
@@ -39,9 +42,33 @@ impl AmatsukazeClient {
             request_id: format!("epgstation-recorded-{recorded_id}-{workflow_id}"),
             add_queue_bat: None,
         };
-        let _: serde_json::Value = self.post_json("api/queue/add", &payload).await?;
+        info!(
+            %workflow_id,
+            input_path = %input_path.display(),
+            input_dir = %input_dir.display(),
+            output_dir = %output_dir.display(),
+            %preset,
+            "submitting paths to Amatsukaze"
+        );
+        let _: serde_json::Value = self
+            .post_json("api/queue/add", &payload)
+            .await
+            .with_context(|| {
+                format!(
+                    "Amatsukaze rejected queue submission for {} using preset {preset:?}",
+                    input_path.display()
+                )
+            })?;
 
-        let queue_item = self.find_submitted_item(&previous_ids, input_path).await?;
+        let queue_item = self
+            .find_submitted_item(&previous_ids, input_path)
+            .await
+            .with_context(|| {
+                format!(
+                    "could not identify newly submitted Amatsukaze item for {}",
+                    input_path.display()
+                )
+            })?;
         info!(
             %workflow_id,
             queue_item_id = queue_item.id,
@@ -58,7 +85,8 @@ impl AmatsukazeClient {
         loop {
             let current = self
                 .queue()
-                .await?
+                .await
+                .with_context(|| format!("could not poll Amatsukaze queue item {queue_item_id}"))?
                 .items
                 .into_iter()
                 .find(|item| item.id == queue_item_id)
@@ -92,17 +120,36 @@ impl AmatsukazeClient {
 
         loop {
             let mut matches = Vec::new();
-            let mut entries = tokio::fs::read_dir(output_dir).await?;
-            while let Some(entry) = entries.next_entry().await? {
+            let mut entries = tokio::fs::read_dir(output_dir).await.with_context(|| {
+                format!("could not read output directory {}", output_dir.display())
+            })?;
+            while let Some(entry) = entries.next_entry().await.with_context(|| {
+                format!(
+                    "could not enumerate output directory {}",
+                    output_dir.display()
+                )
+            })? {
                 let path = entry.path();
                 let same_stem = path
                     .file_stem()
                     .and_then(|value| value.to_str())
                     .is_some_and(|value| value.eq_ignore_ascii_case(stem));
-                if !same_stem || !entry.file_type().await?.is_file() {
+                if !same_stem
+                    || !entry
+                        .file_type()
+                        .await
+                        .with_context(|| format!("could not inspect output {}", path.display()))?
+                        .is_file()
+                {
                     continue;
                 }
-                if entry.metadata().await?.len() > 0 {
+                if entry
+                    .metadata()
+                    .await
+                    .with_context(|| format!("could not read metadata for {}", path.display()))?
+                    .len()
+                    > 0
+                {
                     matches.push(path);
                 }
             }

@@ -1,8 +1,9 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use reqwest::Client;
 use tokio::sync::{RwLock, Semaphore};
+use tracing::info;
 use uuid::Uuid;
 
 use super::{BridgeRequest, WorkflowStatus};
@@ -48,6 +49,12 @@ pub(crate) struct BridgeService {
 
 impl BridgeService {
     pub(crate) fn new(config: Config) -> Result<Self> {
+        let work_dir = std::path::absolute(&config.work_dir).with_context(|| {
+            format!(
+                "failed to make work_dir absolute from {:?}",
+                config.work_dir
+            )
+        })?;
         let http = Client::builder()
             .connect_timeout(Duration::from_secs(config.request_timeout_seconds))
             .user_agent(concat!(
@@ -58,8 +65,9 @@ impl BridgeService {
             .build()?;
         let epgstation = EpgStationClient::new(&config, http.clone())?;
         let amatsukaze = AmatsukazeClient::new(&config, http)?;
+        info!(path = %work_dir.display(), "work directory resolved");
         Ok(Self {
-            work_dir: PathBuf::from(&config.work_dir),
+            work_dir,
             keep_failed_files: config.keep_failed_files,
             epgstation,
             amatsukaze,

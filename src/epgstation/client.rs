@@ -68,18 +68,44 @@ impl EpgStationClient {
             .get(url.clone())
             .timeout(self.request_timeout)
             .send()
-            .await?
-            .error_for_status()?;
-        response
-            .json()
             .await
-            .with_context(|| format!("invalid JSON from {url}"))
+            .with_context(|| format!("GET {url} could not be sent"))?;
+        let status = response.status();
+        let body = response
+            .bytes()
+            .await
+            .with_context(|| format!("could not read GET {url} response body (HTTP {status})"))?;
+        if !status.is_success() {
+            bail!(
+                "GET {url} returned HTTP {status}; response body: {}",
+                body_excerpt(&body)
+            );
+        }
+        serde_json::from_slice(&body).with_context(|| {
+            format!(
+                "invalid JSON from GET {url} (HTTP {status}); response body: {}",
+                body_excerpt(&body)
+            )
+        })
     }
 
     pub(super) fn endpoint(&self, relative: &str) -> Result<Url> {
         self.base_url
             .join(relative)
             .with_context(|| format!("failed to join URL {} with {relative}", self.base_url))
+    }
+}
+
+fn body_excerpt(body: &[u8]) -> String {
+    const LIMIT: usize = 2_000;
+    let text = String::from_utf8_lossy(body);
+    if text.chars().count() <= LIMIT {
+        text.into_owned()
+    } else {
+        format!(
+            "{}... (truncated)",
+            text.chars().take(LIMIT).collect::<String>()
+        )
     }
 }
 

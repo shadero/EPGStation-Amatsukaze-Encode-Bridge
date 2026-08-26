@@ -73,7 +73,7 @@ async function main() {
     }),
   });
   if (!created?.workflowId || !created?.statusUrl) {
-    fail('Bridge returned an invalid workflow response.');
+    fail(`Bridge returned an invalid workflow response: ${JSON.stringify(created)}`);
   }
   const statusUrl = new URL(created.statusUrl, bridgeBaseUrl).toString();
   console.log(
@@ -94,7 +94,9 @@ async function main() {
     } catch (error) {
       consecutiveErrors += 1;
       console.error(
-        `Bridge status check failed (${consecutiveErrors}/${MAX_CONSECUTIVE_POLL_ERRORS}): ${error.message}`,
+        `Bridge status check failed for workflow ${created.workflowId} ` +
+        `(${consecutiveErrors}/${MAX_CONSECUTIVE_POLL_ERRORS}, url=${statusUrl}): ` +
+        `${error.stack || error.message}`,
       );
       if (consecutiveErrors >= MAX_CONSECUTIVE_POLL_ERRORS) throw error;
       continue;
@@ -115,7 +117,11 @@ async function main() {
     }
     if (workflow.state === 'failed') {
       fail(
-        `Bridge workflow failed at ${workflow.stage}: ${workflow.error || 'unknown error'}`,
+        `Bridge workflow ${created.workflowId} failed: ` +
+        `recordedId=${recordedId}, input=${inputFilename}, ` +
+        `stage=${workflow.failedAt || workflow.stage}, ` +
+        `queueItemId=${workflow.queueItemId ?? '(not submitted)'}: ` +
+        `${workflow.error || 'Bridge did not return an error reason'}`,
       );
     }
     if (workflow.state !== 'queued' && workflow.state !== 'running') {

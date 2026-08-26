@@ -48,6 +48,9 @@ pub(crate) struct WorkflowStatus {
     pub(crate) output_filename: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
+    /// The last active stage before `stage` was changed to `failed`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) failed_at: Option<WorkflowStage>,
 }
 
 impl WorkflowStatus {
@@ -67,6 +70,7 @@ impl WorkflowStatus {
             queue_item_id: None,
             output_filename: None,
             error: None,
+            failed_at: None,
         }
     }
 }

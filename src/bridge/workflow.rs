@@ -20,9 +20,19 @@ impl BridgeService {
         request: BridgeRequest,
     ) {
         if let Err(workflow_error) = self.process_workflow(workflow_id, &request).await {
-            error!(%workflow_id, error = %workflow_error, "workflow failed");
-            self.mark_failed(workflow_id, format!("{workflow_error:#}"))
-                .await;
+            let error_chain = format!("{workflow_error:#}");
+            let (failed_at, queue_item_id) =
+                self.mark_failed(workflow_id, error_chain.clone()).await;
+            error!(
+                %workflow_id,
+                recorded_id = request.recorded_id,
+                input_filename = %request.input_filename,
+                preset = %request.preset,
+                failed_at = ?failed_at,
+                queue_item_id = ?queue_item_id,
+                error = %error_chain,
+                "workflow failed"
+            );
             if !self.keep_failed_files {
                 self.remove_workflow_files(workflow_id, "failed").await;
             }
@@ -31,17 +41,37 @@ impl BridgeService {
     }
 
     async fn process_workflow(&self, workflow_id: Uuid, request: &BridgeRequest) -> Result<()> {
-        self.amatsukaze.verify_health().await?;
+        self.amatsukaze
+            .verify_health()
+            .await
+            .context("Amatsukaze health check failed before starting workflow")?;
 
-        let paths = WorkflowPaths::new(&self.work_dir, workflow_id, &request.input_filename)?;
-        paths.create().await?;
+        let paths = WorkflowPaths::new(&self.work_dir, workflow_id, &request.input_filename)
+            .with_context(|| {
+                format!(
+                    "could not construct work paths for input {:?}",
+                    request.input_filename
+                )
+            })?;
+        paths.create().await.with_context(|| {
+            format!(
+                "could not create workflow directory under {}",
+                self.work_dir.display()
+            )
+        })?;
 
         self.set_stage(workflow_id, WorkflowStage::ResolvingInput)
             .await;
         let input_video = self
             .epgstation
             .resolve_input(request.recorded_id, &request.input_filename)
-            .await?;
+            .await
+            .with_context(|| {
+                format!(
+                    "could not resolve EPGStation input {:?} for recorded id {}",
+                    request.input_filename, request.recorded_id
+                )
+            })?;
         self.set_stage(workflow_id, WorkflowStage::WaitingForDownload)
             .await;
         {
@@ -54,7 +84,14 @@ impl BridgeService {
                 .await;
             self.epgstation
                 .download(&input_video, &paths.input_path)
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "could not download EPGStation video file {} to {}",
+                        input_video.id,
+                        paths.input_path.display()
+                    )
+                })?;
         }
 
         self.set_stage(workflow_id, WorkflowStage::SubmittingToAmatsukaze)
@@ -69,20 +106,40 @@ impl BridgeService {
                 &paths.input_dir,
                 &paths.output_dir,
             )
-            .await?;
+            .await
+            .with_context(|| {
+                format!(
+                    "could not submit {} to Amatsukaze with preset {:?}",
+                    paths.input_path.display(),
+                    request.preset
+                )
+            })?;
         self.set_queue_item_id(workflow_id, encode.queue_item_id)
             .await;
         self.set_stage(workflow_id, WorkflowStage::Encoding).await;
         self.amatsukaze
             .wait_for_completion(encode.queue_item_id)
-            .await?;
+            .await
+            .with_context(|| {
+                format!(
+                    "Amatsukaze queue item {} did not complete successfully",
+                    encode.queue_item_id
+                )
+            })?;
 
         self.set_stage(workflow_id, WorkflowStage::LocatingOutput)
             .await;
         let output = self
             .amatsukaze
             .locate_output(&paths.input_path, &paths.output_dir)
-            .await?;
+            .await
+            .with_context(|| {
+                format!(
+                    "could not locate encoded output for {} in {}",
+                    paths.input_path.display(),
+                    paths.output_dir.display()
+                )
+            })?;
         self.set_output(workflow_id, &output.filename).await;
         self.set_stage(workflow_id, WorkflowStage::WaitingForUpload)
             .await;
@@ -100,7 +157,16 @@ impl BridgeService {
                     &request.sub_directory,
                     &request.view_name,
                 )
-                .await?
+                .await
+                .with_context(|| {
+                    format!(
+                        "could not upload {} to EPGStation recorded id {} (subdirectory {:?}, view {:?})",
+                        output.path.display(),
+                        request.recorded_id,
+                        request.sub_directory,
+                        request.view_name
+                    )
+                })?
         };
 
         self.mark_succeeded(workflow_id).await;
@@ -139,13 +205,22 @@ impl BridgeService {
         info!(%workflow_id, "workflow succeeded");
     }
 
-    async fn mark_failed(&self, workflow_id: Uuid, message: String) {
+    async fn mark_failed(
+        &self,
+        workflow_id: Uuid,
+        message: String,
+    ) -> (Option<WorkflowStage>, Option<i64>) {
         if let Some(workflow) = self.workflows.write().await.get_mut(&workflow_id) {
+            let failed_at = workflow.stage.clone();
+            let queue_item_id = workflow.queue_item_id;
             workflow.state = WorkflowState::Failed;
             workflow.stage = WorkflowStage::Failed;
+            workflow.failed_at = Some(failed_at.clone());
             workflow.error = Some(message);
             workflow.updated_at = Utc::now();
+            return (Some(failed_at), queue_item_id);
         }
+        (None, None)
     }
 
     async fn remove_workflow_files(&self, workflow_id: Uuid, outcome: &str) {

@@ -58,7 +58,7 @@ pub(crate) fn run(config: Config, logs: LogReceiver) -> Result<()> {
                 }))
             });
         if let Err(error) = result {
-            tracing::error!(%error, "bridge stopped");
+            tracing::error!(error = %format!("{error:#}"), "bridge stopped");
         }
     });
 
