@@ -15,10 +15,6 @@ use tray_icon::{
     menu::{Menu, MenuEvent, MenuItem},
     MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
 };
-use windows_sys::Win32::{
-    System::Console::{GetConsoleProcessList, GetConsoleWindow},
-    UI::WindowsAndMessaging::{ShowWindow, SW_HIDE},
-};
 
 use crate::{config::Config, run_server};
 
@@ -41,8 +37,6 @@ pub(crate) fn init_logging() -> LogReceiver {
 }
 
 pub(crate) fn run(config: Config, logs: LogReceiver) -> Result<()> {
-    hide_owned_console();
-
     let (shutdown, mut shutdown_rx) = watch::channel(false);
     std::thread::spawn(move || {
         let result = tokio::runtime::Builder::new_multi_thread()
@@ -282,17 +276,6 @@ fn trim_log(output: &mut String) {
         start += 1;
     }
     output.drain(..start);
-}
-
-fn hide_owned_console() {
-    let mut processes = [0_u32; 2];
-    let count = unsafe { GetConsoleProcessList(processes.as_mut_ptr(), processes.len() as u32) };
-    if count == 1 {
-        let window = unsafe { GetConsoleWindow() };
-        if !window.is_null() {
-            unsafe { ShowWindow(window, SW_HIDE) };
-        }
-    }
 }
 
 #[derive(Clone)]

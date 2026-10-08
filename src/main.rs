@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod amatsukaze;
 mod api;
 mod bridge;
@@ -16,6 +18,19 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 fn main() -> Result<()> {
+    #[cfg(windows)]
+    if env::args_os().skip(1).any(|argument| argument == "--cli") {
+        // GUI startup never creates a console; CLI mode uses the calling terminal.
+        use windows_sys::Win32::System::Console::{
+            AllocConsole, AttachConsole, ATTACH_PARENT_PROCESS,
+        };
+        unsafe {
+            if AttachConsole(ATTACH_PARENT_PROCESS) == 0 {
+                AllocConsole();
+            }
+        }
+    }
+
     let options = Options::from_env()?;
 
     #[cfg(windows)]
